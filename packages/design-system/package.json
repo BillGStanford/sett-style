@@ -1,0 +1,8 @@
+{
+  "name": "@sett/design-system",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./tokens/index.ts",
+  "types": "./tokens/index.ts",
+  "description": "SETT design tokens and base components"
+}

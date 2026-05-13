@@ -1,0 +1,32 @@
+{
+  "name": "sett",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SETT — Style it. Share it. Shop it. — Social commerce fashion platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd services/api && uvicorn main:app --reload --port 8000",
+    "build": "cd apps/web && npm run build",
+    "lint": "cd apps/web && npm run lint",
+    "db:migrate": "cd services/api && python scripts/migrate.py",
+    "db:seed": "cd services/api && python scripts/seed.py",
+    "db:reset": "cd services/api && python scripts/reset_db.py",
+    "type-check": "cd apps/web && npx tsc --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sett-technologies/sett"
+  }
+}

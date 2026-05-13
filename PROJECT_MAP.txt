@@ -1,0 +1,551 @@
+﻿  SETT — PROJECT MAP
+  ==================
+  Style it. Share it. Shop it.
+  Last updated: 2026
+
+  This file explains every important file, what it does, and what other files
+  you need to update if you change it.
+
+  ═══════════════════════════════════════════════════════════════
+  QUICK REFERENCE: WHERE THINGS LIVE
+  ═══════════════════════════════════════════════════════════════
+
+    Frontend (Next.js):   apps/web/
+    Backend (FastAPI):    services/api/
+    Shared types:         packages/contracts/types/index.ts
+    Environment vars:     apps/web/.env.local  +  services/api/.env
+    Database schema:      services/api/migrations/001_initial_schema.sql
+
+  ═══════════════════════════════════════════════════════════════
+  APPS/WEB — FRONTEND
+  ═══════════════════════════════════════════════════════════════
+
+  ── app/ (Next.js pages, SSR) ──────────────────────────────────
+
+  app/layout.tsx
+    Root layout. Wraps everything in <Providers>.
+    If you add a new global context: update shared/components/providers.tsx too.
+    If you change the font: update styles/globals.css and tailwind.config.ts.
+
+  app/page.tsx
+    Landing page (/).
+    Imports HeroSection, HowItWorks, FeaturedSetsGrid from features/feed/components/.
+    If landing page copy changes: edit this file.
+    If you add a new landing section: create component in features/feed/components/.
+
+  app/feed/page.tsx
+    Feed page (/feed). Server component.
+    Passes aesthetic filter from URL to FeedGrid.
+    Related: features/feed/components/feed-grid.tsx (the actual grid)
+            features/feed/components/feed-filters.tsx (the filter chips)
+
+  app/feed/layout.tsx
+    Route layout for /feed.
+    If feed route metadata or client wrappers change: edit this file.
+
+  app/canvas/page.tsx
+    Canvas editor page (/canvas?set=ID).
+    Passes setId from URL query param to CanvasEditor.
+    The entire canvas logic is in: features/canvas/components/canvas-editor.tsx
+
+  app/sets/[setId]/page.tsx
+    Set detail / "Steal This Look" page.
+    Fetches set data server-side from API.
+    Related: features/commerce/components/steal-this-look-section.tsx
+            features/sets/components/related-sets.tsx
+
+  app/auth/page.tsx           — Signup page
+  app/auth/login/page.tsx     — Login page
+  app/auth/forgot-password/page.tsx — Password reset
+  app/api/auth/callback/route.ts    — Supabase OAuth callback
+
+  app/api/proxy-image/route.ts
+    Server-side proxy for remote images.
+
+  app/onboarding/page.tsx
+    4-step onboarding after signup.
+    Calls POST /api/users/onboarding on completion.
+    If you add onboarding steps: update this file only.
+
+  app/profile/[username]/page.tsx
+    Public creator profile. Fetches from API server-side.
+    Related: features/profile/components/follow-button.tsx
+
+  app/referrals/page.tsx
+    Referrals page for creator growth and rewards.
+
+  app/trends/page.tsx
+    Trends browse page.
+    Uses trend UI components and client-side widgets.
+  app/trends/trends-client.tsx
+    Client-only trend widget component for /trends.
+
+  app/dashboard/page.tsx    — Earnings dashboard (requires auth)
+  app/settings/page.tsx     — Profile settings + sign out (requires auth)
+  app/challenges/page.tsx   — Challenges listing
+  app/about/page.tsx        — About page
+
+  app/legal/privacy/page.tsx
+    Privacy policy page.
+  app/legal/terms/page.tsx
+    Terms of service page.
+
+  app/robots.ts
+    Robots.txt route.
+  app/sitemap.ts
+    Sitemap route.
+
+  ── features/ (domain-grouped components) ──────────────────────
+
+  features/canvas/
+    The core product. Everything canvas-related.
+
+    components/canvas-editor.tsx  ← MAIN FILE
+      The Fabric.js canvas. Handles init, events, history, save, load.
+      If you change how items load: edit this file.
+      If you change save behavior: edit this + domains/canvas/routes.py (backend).
+      Imports: canvas-toolbar, item-library-panel, properties-panel, publish-modal.
+
+    components/canvas-toolbar.tsx
+      Top bar of canvas. Title input, undo/redo, add text, save, publish.
+      If you add toolbar buttons: edit this file + add handler in canvas-editor.tsx.
+
+    components/floating-toolbar.tsx
+      Floating canvas controls.
+
+    components/item-library-panel.tsx
+      Left panel. URL clip + file upload + item grid.
+      Calls POST /api/items/clip and POST /api/items/upload.
+      If clipping breaks: check this file + domains/items/routes.py (backend).
+      Uses: hooks/use-item-library.ts for polling item status.
+
+    components/properties-panel.tsx
+      Right panel (appears on object select). Opacity, layer, flip, delete.
+      Pure Fabric.js mutations — no API calls.
+
+    components/publish-modal.tsx
+      Publish flow. Exports canvas PNG, uploads to R2, calls POST/PATCH /api/sets.
+      If publish breaks: check this file + domains/sets/routes.py (backend).
+
+    hooks/use-item-library.ts
+      TanStack Query hook. Fetches GET /api/items, polls every 5s while processing.
+      If item list doesn't update: check this file.
+
+    store/canvas-store.ts
+      Zustand store for canvas state: setId, setTitle, isDirty.
+      If you add canvas UI state: add it here.
+
+  features/feed/
+    components/hero-section.tsx    — Landing page hero
+    components/how-it-works.tsx    — "How it works" section
+    components/featured-sets-grid.tsx  — Homepage set grid (fetches from API)
+    components/feed-grid.tsx       — Feed infinite scroll grid (client component)
+    components/feed-filters.tsx    — Aesthetic filter chips
+
+  features/auth/
+    components/signup-form.tsx
+      Google OAuth + Apple OAuth + email/password signup.
+      Calls Supabase auth + POST /api/users/register.
+      If auth breaks: check this file + lib/supabase/client.ts.
+
+  features/commerce/
+    components/steal-this-look-section.tsx
+      "Steal This Look" button + item shop list on set detail page.
+      Shop links route through GET /api/commerce/click/{itemId} for tracking.
+
+    components/item-shop-list.tsx
+      Item shop list on set detail pages.
+    components/steal-this-look-button.tsx
+      CTA button for stealing a look.
+
+  features/sets/
+    components/related-sets.tsx  — Related sets section (server component)
+    components/edit-set-button.tsx
+    components/like-button.tsx
+    components/linked-items-section.tsx
+    components/set-edits-section.tsx
+
+  features/profile/
+    components/follow-button.tsx  — Follow/unfollow button
+    components/follows-modal.tsx
+    components/profile-header.tsx
+
+  features/trends/
+    components/trend-detail-card.tsx
+    components/trend-teaser.tsx
+    components/trend-trajectory-chart.tsx
+
+  features/analytics/
+    use-analytics.ts  — Client-side event tracking hook
+
+  ── lib/ (shared utilities) ────────────────────────────────────
+
+  lib/supabase/client.ts   — Supabase browser client (uses @supabase/ssr)
+  lib/supabase/server.ts   — Supabase server client (for server components)
+  lib/api/client.ts        — Axios instance with auth header injection
+  lib/store/auth-store.ts  — Zustand auth store (user, token, isAuthenticated)
+  lib/utils/cn.ts          — Tailwind class merger utility
+
+    IMPORTANT: auth-store.ts stores the JWT token in memory (not localStorage).
+    Token is lost on page refresh. Session restored by providers.tsx via Supabase.
+    If auth state doesn't restore: check shared/components/providers.tsx.
+
+  ── shared/ ─────────────────────────────────────────────────────
+
+  shared/components/providers.tsx
+    Wraps app in QueryClientProvider + AuthProvider.
+    AuthProvider restores Supabase session on mount, syncs to auth-store.
+    If user stays logged out after refresh: debug this file.
+
+  shared/hooks/use-api.ts
+    Pre-built TanStack Query hooks for all API endpoints.
+    Use these in components instead of raw fetch calls.
+
+  shared/lib/index.ts    — formatCurrency, formatCount, timeAgo, etc.
+  shared/utils/index.ts  — cn, debounce, formatBytes, etc.
+
+  ── components/ (global UI) ─────────────────────────────────────
+
+  components/layout/site-header.tsx
+    Navbar. Shows avatar dropdown with Profile, New Set, Earnings, Settings, Sign Out.
+    If you add nav items: edit this file.
+
+  components/layout/site-footer.tsx  — Footer links
+  components/ui/sett-logo.tsx        — SETT SVG wordmark
+  components/ui/toaster.tsx          — Toast notification container
+
+  ── styles/ ─────────────────────────────────────────────────────
+
+  styles/globals.css
+    Global styles, CSS variables, button classes (.btn-primary etc), utility classes.
+    If you change brand colors: update here AND tailwind.config.ts.
+
+  tailwind.config.ts
+    SETT color tokens, border radius, shadows, animations.
+    Must match globals.css CSS variables.
+
+  postcss.config.js
+    PostCSS config for Tailwind.
+
+  next.config.js
+    Next.js app config.
+
+  middleware.ts
+    Global Next middleware. Route guard or custom redirects belong here.
+
+  next-env.d.ts
+    Next.js types support.
+
+  tsconfig.json
+    App TypeScript config.
+
+  app/.env.local
+    Frontend environment values.
+
+  public/README.md
+    Public folder notes.
+  types/global.d.ts
+    Global TypeScript augmentations.
+
+  ═══════════════════════════════════════════════════════════════
+  SERVICES/API — BACKEND
+  ═══════════════════════════════════════════════════════════════
+
+  ── main.py ─────────────────────────────────────────────────────
+    FastAPI entry point. Registers all routers, middleware, lifespan.
+    If you add a new domain: create the domain folder + add router here.
+
+  ── core/ (shared infrastructure) ───────────────────────────────
+
+  core/config/settings.py
+    All environment variables as typed Pydantic Settings.
+    extra="ignore" means NEXT_PUBLIC_ vars won't crash the backend.
+    If you add a new env var: add field here + add to both .env files.
+
+  core/database/connection.py
+    asyncpg connection pool. init_db() called at startup.
+    If DB connection fails: check DATABASE_URL in services/api/.env.
+
+  core/auth/dependencies.py
+    FastAPI auth dependencies: get_current_user, get_optional_user.
+    Extracts user ID from JWT sub claim WITHOUT signature verification.
+    Trusts Supabase to have already validated the token.
+    Auto-creates user row on first Supabase OAuth login.
+    If 401 errors appear: debug this file first.
+
+  core/auth/jwt.py          — Our own JWT creation (used for email/password login)
+  core/cache/redis_client.py — Redis cache helpers (cache_get, cache_set)
+  core/logging/logger.py    — structlog setup
+  core/storage/r2.py        — Cloudflare R2 upload/delete/presign
+
+  ── domains/ (product domains) ──────────────────────────────────
+
+  Each domain has: routes.py (HTTP handlers) + service.py (business logic) + schemas.py (request/response types)
+
+  domains/users/
+    routes.py   — POST /register, POST /login, GET /me, PATCH /me, POST /@{username}/follow
+    service.py  — User CRUD, password hashing, follow/unfollow
+    schemas.py  — UserCreateSchema, UserProfileSchema, TokenResponseSchema, etc.
+    
+    If you add a user field: add to migrations/001_initial_schema.sql + schemas.py + service.py.
+
+  domains/items/
+    routes.py   — POST /clip, POST /upload, GET /, GET /{id}, DELETE /{id}
+    service.py  — URL domain lookup, affiliate URL wrapping
+    schemas.py  — ItemClipSchema, ItemResponseSchema
+    processor.py — Background removal pipeline (rembg). Runs async.
+    
+    If clipping fails: debug processor.py. Check rembg is installed.
+    If affiliate links are wrong: debug service.py _wrap_affiliate_url().
+
+  domains/sets/
+    routes.py   — GET /feed, GET /featured, POST /, GET /{id}, GET /{id}/items,
+                  PATCH /{id}, POST /{id}/like, POST /{id}/remix
+    service.py  — Feed query, create/update sets, like toggle, remix
+    schemas.py  — SetCreateSchema, SetResponseSchema, SetFeedSchema
+
+  domains/canvas/
+    routes.py   — GET /{id} (load), PATCH /{id}/autosave, POST /thumbnail-upload-url
+    
+    Canvas state lives in sets.canvas_json (JSONB column).
+    Autosave calls PATCH /canvas/{id}/autosave every 60 seconds.
+
+  domains/commerce/
+    routes.py   — GET /click/{itemId} (redirect+track), POST /webhook/{network},
+                  GET /earnings, POST /payouts/request, POST /subscribe/pro, POST /webhook/stripe
+    service.py  — Click recording, conversion processing, earnings calculation
+    schemas.py  — CreatorEarningsSchema, ClickResponseSchema
+
+    Every "Shop" button in the frontend routes through GET /commerce/click/{itemId}.
+    This records the click server-side then redirects to the affiliate URL.
+    If earnings are wrong: debug service.py process_conversion().
+
+  domains/referrals/
+    routes.py   — GET /my-code, POST /apply/{code}
+    service.py  — Referral tracking and creator incentives
+    schemas.py  — Referral schemas
+
+  domains/analytics/
+    routes.py   — POST /event, GET /creator/{userId}/stats
+    service.py  — Analytics event tracking and metrics
+
+  domains/challenges/
+    routes.py   — GET /, GET /{id}
+
+  domains/ai/
+    routes.py   — GET /status (placeholder — Month 9+)
+
+  domains/trends/
+    routes.py   — Trend browsing, signals, and detail data
+    schemas.py  — Trend request/response types
+    service.py  — Trend business logic
+
+  ── migrations/ ─────────────────────────────────────────────────
+
+  migrations/001_initial_schema.sql
+    Full PostgreSQL schema. All 12 tables.
+    Run via: python scripts/migrate.py
+
+    Tables: users, merchants, items, sets, set_items, affiliate_clicks,
+            follows, remixes, challenges, set_likes, payouts, notifications
+
+    If you add a column: create 003_your_change.sql, run migrate.py again.
+    NEVER edit 001 directly after running it.
+
+  migrations/002_add_confirmed_to_clicks.sql
+    Adds confirmed column to affiliate_clicks.
+
+  migrations/003_add_item_url_fields.sql
+    Adds item URL fields.
+
+  migrations/004_add_user_tier.sql
+    Adds user tier field.
+
+  migrations/005_add_referral_commissions.sql
+    Adds referral commissions.
+
+  migrations/005_add_show_followers.sql
+    Adds show followers field.
+
+  migrations/006_add_parent_set_id.sql
+    Adds parent set ID.
+
+  migrations/007_add_user_preferences.sql
+    Adds user preferences.
+
+  migrations/008_add_trend_signals.sql
+    Adds trend signals.
+
+  migrations/add_parent_set_id_to_sets.sql
+    Additional parent set ID migration.
+
+  ── workers/ ────────────────────────────────────────────────────
+
+  workers/confirm_commissions.py — Moves pending→wallet balance after 60-day window
+  workers/cleanup_drafts.py      — Deletes empty drafts older than 90 days
+
+  ── scripts/ ────────────────────────────────────────────────────
+
+  scripts/migrate.py
+    Runs SQL migrations in order. Tracks applied migrations in _migrations table.
+    --seed flag populates merchants table with real affiliate programs.
+
+  services/api/fix_all.py
+  services/api/fix_auth.py
+  services/api/fix_canvas_auth.py
+  services/api/fix_env.py
+  services/api/fix_logger.py
+  services/api/fix_platform.py
+    Fix scripts for various issues.
+
+  ═══════════════════════════════════════════════════════════════
+  PACKAGES (shared between apps)
+  ═══════════════════════════════════════════════════════════════
+
+  packages/contracts/types/index.ts
+    TypeScript interfaces mirroring Python Pydantic schemas.
+    If you change an API response shape: update backend schemas.py AND this file.
+
+  packages/contracts/schemas/index.ts
+    Zod validation schemas for frontend form validation.
+    If you change form validation rules: update here + backend schemas.py validators.
+
+  packages/design-system/tokens/index.ts
+    Color, typography, spacing constants.
+    If you change brand colors: update here + tailwind.config.ts + globals.css.
+
+  packages/utils/index.ts
+    Shared utility functions (formatCurrency, slugify, timeAgo, etc.)
+
+  ═══════════════════════════════════════════════════════════════
+  INFRASTRUCTURE
+  ═══════════════════════════════════════════════════════════════
+
+  infrastructure/env/.env.example
+    Template for both .env files. Never contains real values.
+    If you add an env var: add it here with a comment explaining where to get it.
+
+  infrastructure/scripts/setup.sh   — One-command dev setup (Mac/Linux)
+  infrastructure/jobs/jobs.py        — Background job schedule definitions
+
+  .github/workflows/ci.yml
+    GitHub Actions: type-check, lint, test on every push to main.
+
+  .qodo/agents/
+  .qodo/workflows/
+    Local automation definitions.
+
+  configs/
+    Shared repository configuration and docs.
+
+  uploads/items/
+  uploads/sets/
+    Stored upload assets.
+
+  services/uploads/
+    Upload storage helpers for the backend.
+
+  workers/aggregate_trends.py
+    Standalone trend aggregation script.
+
+  sett/
+    Contains nested .git metadata.
+
+  ═══════════════════════════════════════════════════════════════
+  ENVIRONMENT FILES — WHAT GOES WHERE
+  ═══════════════════════════════════════════════════════════════
+
+  apps/web/.env.local          ← FRONTEND ONLY
+    NEXT_PUBLIC_API_URL         Next.js fetch base URL (exposed to browser)
+    NEXT_PUBLIC_SUPABASE_URL    Supabase project URL (exposed to browser)
+    NEXT_PUBLIC_SUPABASE_ANON_KEY  Supabase anon key (exposed to browser — safe)
+
+  services/api/.env            ← BACKEND ONLY
+    DATABASE_URL                PostgreSQL connection string
+    SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY, SUPABASE_JWT_SECRET
+    SECRET_KEY                  Random hex string for our own JWTs
+    CORS_ORIGINS                Must be JSON array: ["http://localhost:3000"]
+    R2_*, RESEND_*, STRIPE_*    Optional external services
+
+  DO NOT put NEXT_PUBLIC_ vars in services/api/.env — it crashes pydantic-settings.
+  DO NOT put SECRET_KEY or DATABASE_URL in apps/web/.env.local — they'd be exposed.
+
+  ═══════════════════════════════════════════════════════════════
+  COMMON CHANGE RECIPES
+  ═══════════════════════════════════════════════════════════════
+
+  "I want to add a new field to the user profile"
+    1. services/api/migrations/ → create 00X_add_field.sql, run migrate.py
+    2. services/api/domains/users/schemas.py → add field to UserProfileSchema
+    3. services/api/domains/users/service.py → update SQL queries
+    4. packages/contracts/types/index.ts → add field to UserProfile interface
+    5. apps/web/lib/store/auth-store.ts → add field to the interface there too
+
+  "I want to add a new page"
+    1. apps/web/app/new-page/page.tsx → create the page
+    2. apps/web/components/layout/site-header.tsx → add nav link if needed
+    3. apps/web/middleware.ts → add to PROTECTED array if auth required
+
+  "I want to add a new API endpoint"
+    1. services/api/domains/{domain}/routes.py → add the route
+    2. services/api/domains/{domain}/service.py → add business logic
+    3. services/api/domains/{domain}/schemas.py → add request/response schemas
+    4. packages/contracts/types/index.ts → add TypeScript types
+    5. apps/web/shared/hooks/use-api.ts → add TanStack Query hook
+
+  "I want to change affiliate commission splits"
+    services/api/domains/commerce/service.py → change PLATFORM_SHARE / CREATOR_SHARE
+
+  "I want to change the free plan item limit"
+    apps/web/features/canvas/components/canvas-editor.tsx → change FREE_ITEM_LIMIT
+
+  "Backend crashes on startup"
+    1. Check services/api/.env — no NEXT_PUBLIC_ vars, CORS_ORIGINS as JSON array
+    2. Check core/config/settings.py — all vars have defaults
+    3. Check core/logging/logger.py — no add_logger_name processor
+
+  "401 Unauthorized on all API calls"
+    1. Confirm backend is running: http://localhost:8000/health
+    2. Check core/auth/dependencies.py — _extract_sub_from_jwt function
+    3. Verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/.env.local
+
+  "Canvas items don't load after clipping"
+    1. Check item status in DB (should go processing → ready)
+    2. rembg is installed: pip install rembg
+    3. Check domains/items/processor.py for errors
+    4. R2 credentials needed for images to persist — without them, items disappear on restart
+
+  ═══════════════════════════════════════════════════════════════
+  THIRD-PARTY SERVICES USED
+  ═══════════════════════════════════════════════════════════════
+
+  Supabase (auth.supabase.com)
+    What: Authentication — manages user sign-up, OAuth, sessions
+    Dashboard: https://supabase.com/dashboard/project/ketpewiqjtnvrnltbiap
+    Relevant files: lib/supabase/client.ts, lib/supabase/server.ts,
+                    shared/components/providers.tsx, middleware.ts,
+                    core/auth/dependencies.py
+
+  PostgreSQL (your local pgAdmin)
+    What: Primary database
+    Connection: postgresql://postgres:DiskCart5@localhost:5432/sett-db
+    Schema: services/api/migrations/001_initial_schema.sql
+
+  Cloudflare R2 (optional)
+    What: Image storage for item thumbnails and set previews
+    Without it: items clip but images don't persist; sets publish without previews
+    Relevant files: core/storage/r2.py, domains/items/processor.py,
+                    features/canvas/components/publish-modal.tsx
+
+  rembg (local Python package)
+    What: Background removal from product images
+    Install: pip install rembg
+    Downloads U2Net ONNX model (~85MB) on first use
+    Relevant file: services/api/domains/items/processor.py
+
+  Stripe (optional — for Pro subscriptions)
+    What: $9.99/month Pro plan payments
+    Relevant files: services/api/domains/commerce/routes.py (subscribe/pro endpoint),
+                    apps/web/app/settings/page.tsx (upgrade button)
+
+                    

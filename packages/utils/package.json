@@ -1,0 +1,7 @@
+{
+  "name": "@sett/utils",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./index.ts",
+  "description": "Shared utility functions across SETT frontend"
+}
