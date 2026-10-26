@@ -51,6 +51,10 @@ def _coerce_for_json(data: Any) -> Any:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SETT API starting", env=settings.environment)
+    if settings.environment.lower() == "production" and not settings.supabase_jwt_secret:
+        raise RuntimeError(
+            "SUPABASE_JWT_SECRET must be configured in production so API access tokens can be verified."
+        )
     await init_db()
     yield
     logger.info("SETT API shutting down")
@@ -71,13 +75,15 @@ app = FastAPI(
 
 @app.exception_handler(ResponseValidationError)
 async def response_validation_handler(request: Request, exc: ResponseValidationError):
-    coerced = _coerce_for_json(exc.body)
-    logger.warning(
-        "Response validation coerced",
+    logger.error(
+        "Response validation failed",
         path=request.url.path,
         errors=[e["msg"] for e in exc.errors()],
     )
-    return JSONResponse(content=coerced, status_code=200)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Response validation failed"},
+    )
 
 
 @app.exception_handler(Exception)

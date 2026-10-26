@@ -3,6 +3,7 @@
 import asyncpg
 from typing import Optional
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from core.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,9 +30,9 @@ class CommerceService:
         clicker_id: Optional[str],
         referrer: str,
         user_agent: str,
-    ) -> None:
+    ) -> dict:
         """
-        Insert a click record. Fast path — called on every affiliate click.
+        Insert a click record and return its unique attribution reference.
         Uses creator_id from the item's owning user, not the clicker.
         """
         item = await self.conn.fetchrow(
@@ -44,20 +45,24 @@ class CommerceService:
             "SELECT network FROM merchants WHERE id = $1", item["merchant_id"]
         ) if item["merchant_id"] else None
 
+        network = merchant["network"] if merchant else "unknown"
+        click_ref = uuid4().hex
         await self.conn.execute(
             """
             INSERT INTO affiliate_clicks
-              (item_id, set_id, creator_id, clicker_id, network, referrer_url, user_agent)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+              (item_id, set_id, creator_id, clicker_id, network, click_ref, referrer_url, user_agent)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
             item_id,
             set_id,
             item["user_id"],
             clicker_id,
-            merchant["network"] if merchant else "unknown",
+            network,
+            click_ref,
             referrer[:500],
             user_agent[:300],
         )
+        return {"click_ref": click_ref, "network": network}
 
     async def process_conversion(
         self,
@@ -81,8 +86,16 @@ class CommerceService:
         if not click_ref:
             return
 
+        if not isinstance(order_value, (int, float)) or not isinstance(commission_gross, (int, float)):
+            logger.warning("Conversion webhook rejected non-numeric amounts", network=network)
+            return
+        if not (0 <= order_value <= 100_000_000 and 0 <= commission_gross <= 10_000_000):
+            logger.warning("Conversion webhook rejected out-of-range amounts", network=network)
+            return
+
         click = await self.conn.fetchrow(
-            "SELECT id, creator_id FROM affiliate_clicks WHERE click_ref = $1", click_ref
+            "SELECT id, creator_id FROM affiliate_clicks WHERE click_ref = $1 AND network = $2",
+            click_ref, network,
         )
         if not click:
             logger.warning("Conversion webhook: click not found", click_ref=click_ref, network=network)
@@ -92,7 +105,7 @@ class CommerceService:
         commission_platform = round(commission_gross * PLATFORM_SHARE, 2)
 
         async with self.conn.transaction():
-            await self.conn.execute(
+            converted_id = await self.conn.fetchval(
                 """
                 UPDATE affiliate_clicks SET
                     converted = TRUE,
@@ -101,16 +114,18 @@ class CommerceService:
                     commission_gross = $2,
                     commission_creator = $3,
                     commission_platform = $4
-                WHERE id = $5
+                WHERE id = $5 AND converted = FALSE
+                RETURNING id
                 """,
                 order_value, commission_gross, commission_creator, commission_platform, click["id"],
             )
 
-            # Credit pending balance (not wallet — reversal window applies)
-            await self.conn.execute(
-                "UPDATE users SET pending_balance = pending_balance + $1 WHERE id = $2",
-                commission_creator, click["creator_id"],
-            )
+            # Webhooks are commonly retried. Only credit the first successful transition.
+            if converted_id:
+                await self.conn.execute(
+                    "UPDATE users SET pending_balance = pending_balance + $1 WHERE id = $2",
+                    commission_creator, click["creator_id"],
+                )
 
         logger.info(
             "Conversion processed",
@@ -176,26 +191,17 @@ class CommerceService:
         }
 
     async def request_payout(self, user_id: str) -> dict:
-        """Request a manual payout."""
-        user = await self.conn.fetchrow(
-            "SELECT wallet_balance FROM users WHERE id = $1", user_id
-        )
-        if float(user["wallet_balance"]) < PAYOUT_MINIMUM:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=400,
-                detail=f"Minimum payout is ${PAYOUT_MINIMUM}. Your balance: ${user['wallet_balance']}"
-            )
+        """Keep payouts disabled until a real provider and reconciliation flow exist.
 
-        # TODO: integrate PayPal Payouts API or Stripe Payouts
-        # For now: create a pending payout record for manual processing
-        amount = float(user["wallet_balance"])
-        await self.conn.execute(
-            "INSERT INTO payouts (user_id, amount, method, destination, status) VALUES ($1, $2, 'bank_transfer', 'pending', 'pending')",
-            user_id, amount,
-        )
-        await self.conn.execute(
-            "UPDATE users SET wallet_balance = 0 WHERE id = $1", user_id
-        )
+        The previous implementation zeroed creator balances while only creating
+        a placeholder database row. Failing safely prevents accidental loss of funds.
+        """
+        from fastapi import HTTPException
 
-        return {"status": "payout_requested", "amount": amount}
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Creator payouts are temporarily unavailable while payment processing "
+                "is being configured. Your available balance has not been changed."
+            ),
+        )

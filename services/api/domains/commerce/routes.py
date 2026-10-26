@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from asyncpg import Connection
 from typing import Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from core.database.connection import get_conn
 from core.auth.dependencies import get_current_user, get_optional_user
@@ -26,14 +27,28 @@ async def track_click_and_redirect(
     if not affiliate_url:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    await service.record_click(
+    attribution = await service.record_click(
         item_id=item_id,
         set_id=set_id,
         clicker_id=viewer["id"] if viewer else None,
         referrer=str(request.headers.get("referer", ""))[:500],
         user_agent=str(request.headers.get("user-agent", ""))[:300],
     )
-    return RedirectResponse(url=affiliate_url, status_code=302)
+
+    if not attribution:
+        raise HTTPException(status_code=404, detail="Item is no longer available")
+
+    # Carry our click reference through affiliate networks that support sub-IDs.
+    # The corresponding network webhook must return this field for attribution.
+    parts = urlsplit(affiliate_url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise HTTPException(status_code=502, detail="Affiliate destination is invalid")
+    network = attribution["network"]
+    tracking_key = {"shareasale": "afftrack", "cj": "sid"}.get(network, "sett_click")
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query[tracking_key] = attribution["click_ref"]
+    tracked_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    return RedirectResponse(url=tracked_url, status_code=302)
 
 
 @router.post("/webhook/shareasale")
@@ -42,7 +57,7 @@ async def shareasale_webhook(request: Request, conn: Connection = Depends(get_co
     body = await request.json()
     await service.process_conversion(
         network="shareasale",
-        click_ref=body.get("transactionId"),
+        click_ref=body.get("click_ref") or body.get("afftrack") or body.get("subId") or body.get("transactionId"),
         order_value=float(body.get("saleAmount", 0)),
         commission_gross=float(body.get("commissionAmount", 0)),
     )
@@ -55,7 +70,7 @@ async def cj_webhook(request: Request, conn: Connection = Depends(get_conn)):
     body = await request.json()
     await service.process_conversion(
         network="cj",
-        click_ref=body.get("orderId"),
+        click_ref=body.get("click_ref") or body.get("sid") or body.get("subId") or body.get("orderId"),
         order_value=float(body.get("orderAmount", 0)),
         commission_gross=float(body.get("commissionAmount", 0)),
     )

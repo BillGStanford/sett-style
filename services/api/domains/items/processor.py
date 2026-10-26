@@ -26,6 +26,9 @@ Performance notes:
 import asyncio
 import io
 import os
+import ipaddress
+import socket
+from urllib.parse import urljoin, urlsplit
 from pathlib import Path
 from typing import Optional
 
@@ -191,98 +194,135 @@ async def process_uploaded_image(item_id: str, image_bytes: bytes) -> None:
             await get_pool().release(conn)
 
 
-async def _fetch_product_page(url: str) -> Optional[dict]:
-    """
-    Fetch a product page and extract metadata.
-
-    Extraction priority:
-    1. Open Graph tags (og:image, og:title, og:price:amount)
-    2. Schema.org Product structured data
-    3. Fallback: largest img tag on page
-
-    Most major retailers (ASOS, Zara, COS, H&M) have good OG tags.
-    For retailers without OG, we fall back to Schema.org.
-    """
+async def _validate_public_url(url: str) -> bool:
+    """Reject local/private targets and unsafe URL forms before outbound requests."""
     try:
-        # Realistic browser headers — many retailers (ASOS, Zara, Nike)
-        # block requests without a proper User-Agent and accept headers.
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
-        }
+        parsed = urlsplit(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        if parsed.username or parsed.password:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if port not in (80, 443) or (parsed.scheme == "http" and port != 80) or (parsed.scheme == "https" and port != 443):
+            return False
+        host = parsed.hostname.rstrip(".").lower()
+        if host in ("localhost",) or host.endswith((".localhost", ".local", ".internal")):
+            return False
 
+        try:
+            addresses = [ipaddress.ip_address(host)]
+        except ValueError:
+            loop = asyncio.get_running_loop()
+            records = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            addresses = [ipaddress.ip_address(record[4][0]) for record in records]
+        return bool(addresses) and all(address.is_global for address in addresses)
+    except (ValueError, OSError, socket.gaierror):
+        return False
+
+
+async def _safe_get(
+    url: str,
+    *,
+    max_bytes: int,
+    allowed_content_types: tuple[str, ...],
+) -> Optional[tuple[bytes, str, str]]:
+    """Fetch a public URL with bounded bytes and validation on every redirect."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; SETTStyleBot/1.0)",
+        "Accept": ", ".join(allowed_content_types),
+    }
+    current_url = url
+    try:
         async with httpx.AsyncClient(
-            timeout=15.0,
+            timeout=httpx.Timeout(12.0, connect=5.0),
+            follow_redirects=False,
+            trust_env=False,
             headers=headers,
-            follow_redirects=True,
         ) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+            for _ in range(5):
+                if not await _validate_public_url(current_url):
+                    logger.warning("Blocked unsafe outbound URL", url=current_url)
+                    return None
+                async with client.stream("GET", current_url) as response:
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("location")
+                        if not location:
+                            return None
+                        current_url = urljoin(str(response.url), location)
+                        continue
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    if not any(content_type == kind or (kind.endswith("/") and content_type.startswith(kind)) for kind in allowed_content_types):
+                        logger.warning("Rejected outbound response content type", content_type=content_type)
+                        return None
+                    content_length = response.headers.get("content-length")
+                    if content_length and int(content_length) > max_bytes:
+                        logger.warning("Rejected oversized outbound response", content_length=content_length)
+                        return None
+                    data = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        data.extend(chunk)
+                        if len(data) > max_bytes:
+                            logger.warning("Stopped oversized outbound response", max_bytes=max_bytes)
+                            return None
+                    return bytes(data), str(response.url), content_type
+        return None
+    except (httpx.HTTPError, ValueError, OSError) as exc:
+        logger.warning("Safe outbound request failed", url=current_url, error=str(exc))
+        return None
 
-        soup = BeautifulSoup(response.text, "lxml")
 
-        # Try OG image first
+async def _fetch_product_page(url: str) -> Optional[dict]:
+    """Fetch a product page safely and extract common product metadata."""
+    result = await _safe_get(
+        url,
+        max_bytes=2_000_000,
+        allowed_content_types=("text/html",),
+    )
+    if not result:
+        return None
+    page_bytes, final_url, _ = result
+    try:
+        soup = BeautifulSoup(page_bytes, "lxml")
         og_image = soup.find("meta", property="og:image")
         og_title = soup.find("meta", property="og:title")
         og_price = soup.find("meta", property="product:price:amount")
         og_brand = soup.find("meta", property="og:site_name")
-
         image_url = og_image.get("content") if og_image else None
-
-        # Fallback: largest img src
         if not image_url:
-            imgs = soup.find_all("img", src=True)
-            if imgs:
-                image_url = imgs[0].get("src")
-
+            image = soup.find("img", src=True)
+            image_url = image.get("src") if image else None
         if not image_url:
             return None
 
-        # Normalize relative URLs
-        if image_url.startswith("//"):
-            image_url = "https:" + image_url
-
+        image_url = urljoin(final_url, image_url.strip())
+        price = None
+        if og_price and og_price.get("content"):
+            try:
+                price = float(og_price["content"])
+                if price < 0 or price > 10_000_000:
+                    price = None
+            except (TypeError, ValueError):
+                price = None
         return {
             "image_url": image_url,
             "product_name": og_title.get("content") if og_title else None,
-            "price": float(og_price.get("content")) if og_price else None,
+            "price": price,
             "brand": og_brand.get("content") if og_brand else None,
         }
-
-    except Exception as e:
-        logger.warning("Failed to fetch product page", url=url, error=str(e))
+    except Exception as exc:
+        logger.warning("Failed to parse product page", url=final_url, error=str(exc))
         return None
 
 
 async def _download_image(image_url: str) -> Optional[bytes]:
-    """Download an image URL and return raw bytes."""
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Sec-Fetch-Dest": "image",
-            "Sec-Fetch-Mode": "no-cors",
-            "Sec-Fetch-Site": "cross-site",
-            "Referer": "https://www.asos.com/",
-        }
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
-            response = await client.get(image_url)
-            response.raise_for_status()
-            return response.content
-    except Exception as e:
-        logger.warning("Failed to download image", url=image_url, error=str(e))
-        return None
+    """Download a bounded raster image from a validated public destination."""
+    result = await _safe_get(
+        image_url,
+        max_bytes=12_000_000,
+        allowed_content_types=("image/png", "image/jpeg", "image/webp"),
+    )
+    return result[0] if result else None
 
 
 def _remove_background(image_bytes: bytes) -> bytes:

@@ -1,30 +1,46 @@
 """
 FastAPI Auth Dependencies — extracts user ID from Supabase JWT.
-Decodes the JWT payload without re-verifying the signature.
-Supabase already verified it. We just need the sub (user ID).
+Verifies Supabase access tokens before trusting claims.
 """
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from asyncpg import Connection
-import base64, json
+from jose import JWTError, jwt
+from core.config.settings import settings
 
 from core.database.connection import get_conn
 
 security = HTTPBearer(auto_error=False)
 
 
-def _get_sub(token: str) -> Optional[str]:
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        pad = parts[1] + "=" * (4 - len(parts[1]) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(pad))
-        return str(payload["sub"]) if payload.get("sub") else None
-    except Exception:
+def _decode_claims(token: str) -> Optional[dict]:
+    """Verify a Supabase HS256 access token before using any claim.
+
+    Configure SUPABASE_JWT_SECRET with the project's JWT signing secret.
+    Fail closed when it is absent; an unverified payload must never establish identity.
+    """
+    secret = settings.supabase_jwt_secret
+    if not secret:
         return None
+    try:
+        claims = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+            options={"require_sub": True, "require_exp": True},
+        )
+        return claims if isinstance(claims, dict) else None
+    except (JWTError, TypeError, ValueError):
+        return None
+
+
+def _get_sub(token: str) -> Optional[str]:
+    claims = _decode_claims(token)
+    subject = claims.get("sub") if claims else None
+    return str(subject) if subject else None
 
 
 async def _get_or_create_user(conn: Connection, user_id: str, token: str) -> Optional[dict]:
@@ -36,10 +52,11 @@ async def _get_or_create_user(conn: Connection, user_id: str, token: str) -> Opt
         return dict(row)
     # Auto-create on first OAuth login
     try:
-        parts = token.split(".")
-        pad = parts[1] + "=" * (4 - len(parts[1]) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(pad))
-        email = payload.get("email") or payload.get("user_metadata", {}).get("email", "")
+        payload = _decode_claims(token)
+        if not payload:
+            return None
+        metadata = payload.get("user_metadata") or {}
+        email = payload.get("email") or metadata.get("email", "")
         if not email:
             return None
         from nanoid import generate as nanoid
