@@ -134,6 +134,50 @@
   }
 }
 
+
+/* SETT Studio landing experience — existing monochrome palette + Inter retained. */
+@layer components {
+  .sett-hero { border-bottom: 1px solid var(--color-gray-border); background: radial-gradient(ellipse at 78% 38%, rgba(245,245,245,.9), transparent 42%), #fff; }
+  .sett-hero-inner { display:grid; grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr); align-items:center; gap:clamp(2.5rem,6vw,6.5rem); min-height:660px; padding-top:clamp(4rem,8vw,7rem); padding-bottom:clamp(4rem,8vw,7rem); }
+  .sett-hero-copy { position:relative; z-index:1; }
+  .sett-eyebrow { display:inline-flex; align-items:center; gap:10px; margin-bottom:1.6rem; color:var(--color-gray-secondary); font-size:10px; font-weight:700; letter-spacing:.16em; }
+  .sett-eyebrow-dot { width:7px; height:7px; border-radius:50%; background:var(--color-near-black); }
+  .sett-hero-title { margin:0 0 1.5rem; font-size:clamp(3.8rem,6.8vw,6.7rem); line-height:.91; letter-spacing:-.075em; font-weight:900; }
+  .sett-hero-title span { color:var(--color-gray-secondary); }
+  .sett-hero-description { max-width:420px; margin:0 0 2rem; color:var(--color-gray-primary); font-size:clamp(1rem,1.25vw,1.15rem); line-height:1.8; }
+  .sett-hero-cta { min-height:52px; display:inline-flex; align-items:center; gap:16px; justify-content:center; padding-left:1.25rem; padding-right:1.25rem; }
+  .sett-hero-proof { display:flex; align-items:center; gap:12px; margin-top:2.6rem; color:var(--color-gray-secondary); font-size:12px; line-height:1.6; }
+  .sett-hero-proof p { margin:0; } .sett-hero-proof strong { color:var(--color-near-black); font-weight:700; }
+  .sett-proof-mark { display:grid; place-items:center; width:40px; height:40px; border:1px solid var(--color-gray-border); border-radius:50%; color:var(--color-near-black); font-weight:900; font-size:16px; }
+  .sett-hero-art { min-width:0; }
+  .sett-board-topline,.sett-board-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--color-gray-tertiary); font-size:9px; letter-spacing:.12em; font-weight:700; }
+  .sett-board-topline { margin-bottom:13px; } .sett-board-footer { margin-top:14px; }
+  .sett-board { position:relative; display:grid; grid-template-columns:1fr .83fr; grid-template-rows:1fr 1fr; gap:13px; min-height:470px; padding:18px; border:1px solid #e7e7e7; background:rgba(255,255,255,.76); box-shadow:0 22px 70px rgba(0,0,0,.07); transform:rotate(.6deg); }
+  .hero-look { min-width:0; background:#f5f5f5; overflow:hidden; }
+  .hero-look-one { grid-row:1 / 3; } .hero-look-two { grid-column:2; grid-row:1; } .hero-look-three { grid-column:2; grid-row:2; }
+  .sett-look-image { position:relative; height:calc(100% - 61px); min-height:125px; overflow:hidden; background:#e8e8e8; }
+  .hero-look-one .sett-look-image { height:calc(100% - 67px); }
+  .sett-look-image img { width:100%; height:100%; display:block; object-fit:cover; transition:transform .5s ease; }
+  .hero-look:hover .sett-look-image img { transform:scale(1.04); }
+  .sett-look-index { position:absolute; top:10px; left:10px; padding:5px 7px; color:#fff; background:rgba(10,10,10,.72); font-size:9px; letter-spacing:.1em; }
+  .sett-look-meta { display:grid; gap:4px; padding:10px 11px 12px; }
+  .sett-look-meta span { color:var(--color-gray-tertiary); font-size:8px; letter-spacing:.1em; }
+  .sett-look-meta strong { overflow:hidden; color:var(--color-near-black); font-size:11px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+  .sett-look-meta small { color:var(--color-gray-secondary); font-size:9px; }
+  .sett-board-sticker { position:absolute; right:-18px; top:42%; display:flex; flex-direction:column; gap:4px; width:102px; padding:13px 12px; background:#fff; border:1px solid var(--color-gray-border); box-shadow:0 8px 25px rgba(0,0,0,.1); transform:rotate(7deg); }
+  .sett-board-sticker span { color:var(--color-gray-tertiary); font-size:8px; letter-spacing:.18em; }
+  .sett-board-sticker strong { font-size:16px; line-height:.96; letter-spacing:-.06em; }
+  .sett-board-sticker i { align-self:flex-end; font-size:20px; font-style:normal; }
+  @media (max-width:767px) {
+    .sett-hero-inner { grid-template-columns:1fr; gap:3.25rem; min-height:auto; padding-top:3.5rem; padding-bottom:3.5rem; }
+    .sett-hero-title { font-size:clamp(3.5rem,16vw,5.5rem); } .sett-hero-description { font-size:1rem; }
+    .sett-hero-cta { width:100%; } .sett-board { min-height:390px; padding:11px; gap:8px; }
+    .sett-look-meta { padding:8px; } .sett-board-sticker { right:-8px; width:83px; padding:10px; }
+    .sett-board-sticker strong { font-size:13px; } .sett-board-topline,.sett-board-footer { font-size:7px; letter-spacing:.07em; }
+  }
+  @media (prefers-reduced-motion:reduce) { .sett-look-image img { transition:none; } }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
