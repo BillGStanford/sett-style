@@ -17,10 +17,10 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     debug: bool = False
-    secret_key: str = "change-me-in-production"
+    secret_key: str = ""
 
     # Database
-    database_url: str = "postgresql://postgres:DiskCart5@localhost:5432/sett-db"
+    database_url: str = "postgresql://postgres@localhost:5432/sett-db"
     db_pool_min_size: int = 2
     db_pool_max_size: int = 10
 
