@@ -3,6 +3,7 @@
 import asyncpg
 from typing import Optional
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from core.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,9 +30,9 @@ class CommerceService:
         clicker_id: Optional[str],
         referrer: str,
         user_agent: str,
-    ) -> None:
+    ) -> dict:
         """
-        Insert a click record. Fast path — called on every affiliate click.
+        Insert a click record and return its unique attribution reference.
         Uses creator_id from the item's owning user, not the clicker.
         """
         item = await self.conn.fetchrow(
@@ -44,20 +45,24 @@ class CommerceService:
             "SELECT network FROM merchants WHERE id = $1", item["merchant_id"]
         ) if item["merchant_id"] else None
 
+        network = merchant["network"] if merchant else "unknown"
+        click_ref = uuid4().hex
         await self.conn.execute(
             """
             INSERT INTO affiliate_clicks
-              (item_id, set_id, creator_id, clicker_id, network, referrer_url, user_agent)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+              (item_id, set_id, creator_id, clicker_id, network, click_ref, referrer_url, user_agent)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
             item_id,
             set_id,
             item["user_id"],
             clicker_id,
-            merchant["network"] if merchant else "unknown",
+            network,
+            click_ref,
             referrer[:500],
             user_agent[:300],
         )
+        return {"click_ref": click_ref, "network": network}
 
     async def process_conversion(
         self,
