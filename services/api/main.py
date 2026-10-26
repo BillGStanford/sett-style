@@ -51,6 +51,10 @@ def _coerce_for_json(data: Any) -> Any:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SETT API starting", env=settings.environment)
+    if settings.environment.lower() == "production" and not settings.supabase_jwt_secret:
+        raise RuntimeError(
+            "SUPABASE_JWT_SECRET must be configured in production so API access tokens can be verified."
+        )
     await init_db()
     yield
     logger.info("SETT API shutting down")
