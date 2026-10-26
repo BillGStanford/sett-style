@@ -86,8 +86,16 @@ class CommerceService:
         if not click_ref:
             return
 
+        if not isinstance(order_value, (int, float)) or not isinstance(commission_gross, (int, float)):
+            logger.warning("Conversion webhook rejected non-numeric amounts", network=network)
+            return
+        if not (0 <= order_value <= 100_000_000 and 0 <= commission_gross <= 10_000_000):
+            logger.warning("Conversion webhook rejected out-of-range amounts", network=network)
+            return
+
         click = await self.conn.fetchrow(
-            "SELECT id, creator_id FROM affiliate_clicks WHERE click_ref = $1", click_ref
+            "SELECT id, creator_id FROM affiliate_clicks WHERE click_ref = $1 AND network = $2",
+            click_ref, network,
         )
         if not click:
             logger.warning("Conversion webhook: click not found", click_ref=click_ref, network=network)
