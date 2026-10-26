@@ -92,7 +92,7 @@ class CommerceService:
         commission_platform = round(commission_gross * PLATFORM_SHARE, 2)
 
         async with self.conn.transaction():
-            await self.conn.execute(
+            converted_id = await self.conn.fetchval(
                 """
                 UPDATE affiliate_clicks SET
                     converted = TRUE,
@@ -101,16 +101,18 @@ class CommerceService:
                     commission_gross = $2,
                     commission_creator = $3,
                     commission_platform = $4
-                WHERE id = $5
+                WHERE id = $5 AND converted = FALSE
+                RETURNING id
                 """,
                 order_value, commission_gross, commission_creator, commission_platform, click["id"],
             )
 
-            # Credit pending balance (not wallet — reversal window applies)
-            await self.conn.execute(
-                "UPDATE users SET pending_balance = pending_balance + $1 WHERE id = $2",
-                commission_creator, click["creator_id"],
-            )
+            # Webhooks are commonly retried. Only credit the first successful transition.
+            if converted_id:
+                await self.conn.execute(
+                    "UPDATE users SET pending_balance = pending_balance + $1 WHERE id = $2",
+                    commission_creator, click["creator_id"],
+                )
 
         logger.info(
             "Conversion processed",
@@ -176,26 +178,17 @@ class CommerceService:
         }
 
     async def request_payout(self, user_id: str) -> dict:
-        """Request a manual payout."""
-        user = await self.conn.fetchrow(
-            "SELECT wallet_balance FROM users WHERE id = $1", user_id
-        )
-        if float(user["wallet_balance"]) < PAYOUT_MINIMUM:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=400,
-                detail=f"Minimum payout is ${PAYOUT_MINIMUM}. Your balance: ${user['wallet_balance']}"
-            )
+        """Keep payouts disabled until a real provider and reconciliation flow exist.
 
-        # TODO: integrate PayPal Payouts API or Stripe Payouts
-        # For now: create a pending payout record for manual processing
-        amount = float(user["wallet_balance"])
-        await self.conn.execute(
-            "INSERT INTO payouts (user_id, amount, method, destination, status) VALUES ($1, $2, 'bank_transfer', 'pending', 'pending')",
-            user_id, amount,
-        )
-        await self.conn.execute(
-            "UPDATE users SET wallet_balance = 0 WHERE id = $1", user_id
-        )
+        The previous implementation zeroed creator balances while only creating
+        a placeholder database row. Failing safely prevents accidental loss of funds.
+        """
+        from fastapi import HTTPException
 
-        return {"status": "payout_requested", "amount": amount}
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Creator payouts are temporarily unavailable while payment processing "
+                "is being configured. Your available balance has not been changed."
+            ),
+        )
