@@ -35,6 +35,9 @@ async def track_click_and_redirect(
         user_agent=str(request.headers.get("user-agent", ""))[:300],
     )
 
+    if not attribution:
+        raise HTTPException(status_code=404, detail="Item is no longer available")
+
     # Carry our click reference through affiliate networks that support sub-IDs.
     # The corresponding network webhook must return this field for attribution.
     parts = urlsplit(affiliate_url)
